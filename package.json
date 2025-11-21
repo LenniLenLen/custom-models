@@ -1,0 +1,16 @@
+{
+"name": "minecraft-asset-uploader",
+"version": "1.0.0",
+"description": "Minecraft 3D Model Management System hosted on Vercel.",
+"main": "index.js",
+"scripts": {
+"start": "echo 'This project runs Serverless Functions on Vercel.'",
+"deploy": "vercel deploy"
+},
+"dependencies": {
+"@vercel/blob": "^0.23.0",
+"@vercel/node": "^3.0.0",
+"formidable": "^3.5.1",
+"jszip": "^3.10.1"
+}
+}

@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Model Uploader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* bg-gray-900 */
+            color: #f3f4f6; /* bg-gray-100 */
+        }
+        #ui-panel {
+            margin: 2rem auto;
+            background-color: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 1.5rem; /* p-6 */
+            border-radius: 0.75rem; /* rounded-xl */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            width: 90%;
+            max-width: 600px;
+            z-index: 10;
+        }
+        #model-list-container {
+            max-height: 40vh;
+            overflow-y: auto;
+            padding-right: 8px; /* Für Scrollbar-Platz */
+        }
+        /* Scrollbar-Styling */
+        #model-list-container::-webkit-scrollbar { width: 6px; }
+        #model-list-container::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
+        #model-list-container::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 3px; }
+        #model-list-container::-webkit-scrollbar-thumb:hover { background: #2563eb; }
+        
+        /* Thumbnail-Platzhalter */
+        .thumbnail-placeholder {
+            width: 64px;
+            height: 64px;
+            background-color: #374151; /* bg-gray-700 */
+            border: 1px dashed #6b7280; /* bg-gray-500 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            color: #9ca3af; /* text-gray-400 */
+        }
+        .thumbnail-image {
+            width: 64px;
+            height: 64px;
+            object-fit: cover;
+            border-radius: 0.375rem; /* rounded-md */
+        }
+        #message-box {
+            position: fixed;
+            bottom: 1.5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #ef4444; /* bg-red-500 */
+            color: white;
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem; /* rounded-lg */
+            font-weight: 500;
+            z-index: 20;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+        }
+    </style>
+</head>
+<body class="p-4">
+
+    <!-- UI Panel -->
+    <div id="ui-panel" class="space-y-6">
+        
+        <!-- Upload Section -->
+        <form id="upload-form" class="space-y-4">
+            <h1 class="text-2xl font-bold text-white">Minecraft Model Uploader</h1>
+            
+            <div>
+                <label for="model-name-input" class="block text-sm font-medium text-gray-200 mb-1">Modellname</label>
+                <input type="text" id="model-name-input" name="modelName" class="w-full bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 p-2.5" placeholder="z.B. 'Schwarzes Schwert'" required>
+            </div>
+
+            <div>
+                <label for="model-upload" class="block text-sm font-medium text-gray-200 mb-1">Upload ZIP (.zip)</label>
+                <input type="file" id="model-upload" name="file" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 transition-colors duration-200 cursor-pointer" accept=".zip" required>
+                <p class="mt-1 text-xs text-gray-400">Die ZIP muss dein Modell (.obj, .json, .glb) und Texturen (.png) enthalten.</p>
+            </div>
+            
+            <button type="submit" id="upload-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2">
+                <span id="upload-btn-text">Hochladen & Resourcepack bauen</span>
+                <svg id="upload-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" style="display: none;">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </button>
+        </form>
+
+        <!-- Model List Section -->
+        <div class="space-y-3">
+            <h2 class="text-lg font-semibold text-white border-b border-gray-600 pb-2">Hochgeladene Modelle</h2>
+            <div id="list-loading-spinner" class="text-center text-gray-300 py-4">
+                <p>Lade Modell-Liste...</p>
+            </div>
+            <div id="model-list-container" class="space-y-2">
+                <!-- Modelle werden hier per JS eingefügt -->
+                <p id="empty-list-msg" class="text-sm text-gray-400" style="display: none;">Noch keine Modelle hochgeladen.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Box for Errors/Success -->
+    <div id="message-box">
+        <span id="message-text"></span>
+    </div>
+
+    <script>
+        const uploadForm = document.getElementById('upload-form');
+        const uploadBtn = document.getElementById('upload-btn');
+        const uploadBtnText = document.getElementById('upload-btn-text');
+        const uploadSpinner = document.getElementById('upload-spinner');
+        
+        const modelListContainer = document.getElementById('model-list-container');
+        const emptyListMsg = document.getElementById('empty-list-msg');
+        const listLoadingSpinner = document.getElementById('list-loading-spinner');
+
+        const messageBox = document.getElementById('message-box');
+        const messageText = document.getElementById('message-text');
+
+        // === NACHRICHTEN-FUNKTION ===
+        function displayMessage(message, isError = true) {
+            messageText.textContent = message;
+            messageBox.style.backgroundColor = isError ? '#ef4444' : '#22c55e'; // red-500 or green-500
+            messageBox.style.display = 'block';
+            messageBox.style.opacity = 1;
+            setTimeout(() => {
+                messageBox.style.opacity = 0;
+                setTimeout(() => { messageBox.style.display = 'none'; }, 300);
+            }, 3000);
+        }
+
+        // === UPLOAD-FUNKTION ===
+        uploadForm.addEventListener('submit', async (event) => {
+            event.preventDefault(); // Standard-Formular-Versand verhindern
+            
+            const formData = new FormData(uploadForm);
+            
+            // Ladezustand aktivieren
+            uploadBtn.disabled = true;
+            uploadBtnText.textContent = 'Lade hoch...';
+            uploadSpinner.style.display = 'block';
+
+            try {
+                // Sende Daten an die (noch nicht existierende) Serverless Function
+                // FIX: Verwende window.location.origin, um eine absolute URL zu erzwingen
+                const response = await fetch(`${window.location.origin}/api/upload`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    // Versuche, eine JSON-Fehlermeldung zu parsen, wenn verfügbar
+                    let errorData = { message: 'Upload fehlgeschlagen. Netzwerkfehler oder Server-Problem.' };
+                    try {
+                        errorData = await response.json();
+                    } catch (e) {
+                        // Wenn keine JSON-Antwort, verwende den Statuscode
+                        errorData.message = `Upload fehlgeschlagen (Status: ${response.status}).`;
+                    }
+                    throw new Error(errorData.message);
+                }
+
+                const result = await response.json();
+                displayMessage(`Modell '${result.name}' erfolgreich hochgeladen!`, false);
+                uploadForm.reset(); // Formular leeren
+                fetchModels(); // Liste neu laden
+
+            } catch (error) {
+                console.error('Upload-Fehler:', error);
+                displayMessage(error.message, true);
+            } finally {
+                // Ladezustand deaktivieren
+                uploadBtn.disabled = false;
+                uploadBtnText.textContent = 'Hochladen & Resourcepack bauen';
+                uploadSpinner.style.display = 'none';
+            }
+        });
+
+        // === MODELL-LISTE LADEN ===
+        async function fetchModels() {
+            listLoadingSpinner.style.display = 'block';
+            emptyListMsg.style.display = 'none';
+            modelListContainer.innerHTML = '';
+
+            try {
+                // Ruft Daten von der (noch nicht existierenden) API ab
+                // FIX: Verwende window.location.origin, um eine absolute URL zu erzwingen
+                const response = await fetch(`${window.location.origin}/api/list`);
+                
+                if (!response.ok) {
+                    // Behandle 404/500 Fehler korrekt
+                    throw new Error('Modell-Liste konnte nicht geladen werden. Ist das Backend bereit?');
+                }
+
+                const models = await response.json();
+
+                if (models.length === 0) {
+                    emptyListMsg.style.display = 'block';
+                } else {
+                    renderModelList(models);
+                }
+
+            } catch (error) {
+                console.error('Fehler beim Laden der Liste:', error);
+                displayMessage(error.message, true);
+                emptyListMsg.textContent = 'Fehler beim Laden der Modelle (404/Server-Problem).';
+                emptyListMsg.style.display = 'block';
+            } finally {
+                listLoadingSpinner.style.display = 'none';
+            }
+        }
+
+        // === MODELL-LISTE ANZEIGEN ===
+        function renderModelList(models) {
+            modelListContainer.innerHTML = ''; // Liste leeren
+            models.forEach(model => {
+                const itemEl = document.createElement('div');
+                itemEl.className = 'flex items-center justify-between bg-gray-800 p-2 rounded-lg gap-3';
+                
+                // Thumbnail (mit Platzhalter)
+                let thumbnailHtml;
+                if (model.thumbnailUrl) {
+                    thumbnailHtml = `<img src="${model.thumbnailUrl}" alt="${model.name} Thumbnail" class="thumbnail-image">`;
+                } else {
+                    // Platzhalter, wenn Thumbnail noch nicht gerendert wurde
+                    thumbnailHtml = `<div class="thumbnail-placeholder"><span>Render...</span></div>`;
+                }
+
+                itemEl.innerHTML = `
+                    ${thumbnailHtml}
+                    <span class="text-sm font-medium truncate flex-1" title="${model.name}">${model.name}</span>
+                    <div class="flex-shrink-0 space-x-1">
+                        <button data-id="${model.id}" class="delete-item-btn bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-1 px-2 rounded">Löschen</button>
+                    </div>
+                `;
+                modelListContainer.appendChild(itemEl);
+            });
+        }
+
+        // === LÖSCH-FUNKTION (per Event-Delegation) ===
+        modelListContainer.addEventListener('click', async (event) => {
+            const target = event.target;
+            if (!target.classList.contains('delete-item-btn')) return;
+
+            const id = target.dataset.id;
+            if (!id) return;
+
+            // Kurze Bestätigung (normalerweise würde man ein Modal verwenden)
+            // HINWEIS: confirm() wird in dieser Umgebung unterdrückt. Es wird nur ein console.log ausgegeben.
+            console.log('Löschen bestätigt für ID:', id);
+
+            target.disabled = true;
+            target.textContent = '...';
+
+            try {
+                // Sende Anfrage an die (noch nicht existierende) Delete-API
+                // FIX: Verwende window.location.origin, um eine absolute URL zu erzwingen
+                const response = await fetch(`${window.location.origin}/api/delete`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: id }),
+                });
+
+                if (!response.ok) {
+                     // Versuche, eine JSON-Fehlermeldung zu parsen, wenn verfügbar
+                    let errorData = { message: 'Löschen fehlgeschlagen. Netzwerkfehler oder Server-Problem.' };
+                    try {
+                        errorData = await response.json();
+                    } catch (e) {
+                        errorData.message = `Löschen fehlgeschlagen (Status: ${response.status}).`;
+                    }
+                    throw new Error(errorData.message);
+                }
+
+                displayMessage('Modell gelöscht. Resourcepack wird aktualisiert.', false);
+                fetchModels(); // Liste neu laden
+
+            } catch (error) {
+                console.error('Lösch-Fehler:', error);
+                displayMessage(error.message, true);
+                target.disabled = false;
+                target.textContent = 'Löschen';
+            }
+        });
+
+        // Beim Start die Modell-Liste laden
+        document.addEventListener('DOMContentLoaded', fetchModels);
+
+    </script>
+</body>
+</html>

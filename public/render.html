@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Model Renderer for Thumbnail</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: transparent; }
+        canvas { display: block; }
+    </style>
+    <!-- THREE.js Bibliotheken -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+</head>
+<body>
+    <script>
+        // Setze eine globale Variable, um zu signalisieren, wann das Rendering abgeschlossen ist
+        window.renderingFinished = false;
+
+        const RENDER_SIZE = 256; // Standardgröße für Thumbnails
+
+        let scene, camera, renderer;
+        let modelUrl, textureUrl, modelType;
+        
+        // Die Model-ID wird per URL-Parameter übergeben
+        const urlParams = new URLSearchParams(window.location.search);
+        const modelId = urlParams.get('id');
+
+        if (!modelId) {
+            console.error("Fehlende Modell-ID.");
+            window.renderingFinished = true; // Signalisiere, dass nichts zu tun ist
+            // Füge einen sichtbaren Fehler hinzu, falls ein menschlicher Betrachter die Seite öffnet
+            document.body.innerHTML = '<div style="color:white;padding:20px;background:red;">Fehler: Modell-ID fehlt.</div>';
+        } else {
+             // Lade Metadaten für die URLs
+            fetch(`/models/${modelId}/metadata.json`)
+                .then(response => {
+                    if (!response.ok) throw new Error("Metadaten nicht gefunden.");
+                    return response.json();
+                })
+                .then(data => {
+                    modelUrl = data.modelUrl;
+                    textureUrl = data.textureUrl;
+                    modelType = data.modelType.toLowerCase();
+                    init();
+                })
+                .catch(error => {
+                    console.error("Fehler beim Laden der Metadaten:", error);
+                    window.renderingFinished = true; // Signalisiere Fehler
+                });
+        }
+
+
+        function init() {
+            // RENDERER
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(RENDER_SIZE, RENDER_SIZE);
+            renderer.setClearColor(0x000000, 0); // Transparenter Hintergrund
+            document.body.appendChild(renderer.domElement);
+
+            // SCENE
+            scene = new THREE.Scene();
+
+            // CAMERA
+            camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+            camera.position.set(2, 2, 2); // Startposition der Kamera
+
+            // LIGHTS
+            const light = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(light);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 5, 5).normalize();
+            scene.add(directionalLight);
+
+            // TEXTURLADER
+            const textureLoader = new THREE.TextureLoader();
+            const texture = textureLoader.load(textureUrl, () => {
+                // Lade das Modell, nachdem die Textur geladen wurde
+                loadModel(texture);
+            }, undefined, error => {
+                console.error('Fehler beim Laden der Textur:', error);
+                // Versuche das Modell trotzdem ohne Textur zu laden
+                loadModel(null); 
+            });
+        }
+
+        function loadModel(texture) {
+            let loader;
+            
+            // Wähle den korrekten Loader basierend auf dem Dateityp
+            switch (modelType) {
+                case 'gltf':
+                case 'glb':
+                    loader = new THREE.GLTFLoader();
+                    break;
+                case 'obj':
+                    loader = new THREE.OBJLoader();
+                    break;
+                default:
+                    console.error(`Nicht unterstützter Modelltyp: ${modelType}`);
+                    window.renderingFinished = true;
+                    return;
+            }
+
+            loader.load(modelUrl, (object) => {
+                let model;
+
+                if (modelType === 'gltf' || modelType === 'glb') {
+                    model = object.scene;
+                } else {
+                    model = object;
+                }
+
+                // Wende Material und Textur an
+                if (texture) {
+                    const material = new THREE.MeshLambertMaterial({ map: texture });
+                    model.traverse((child) => {
+                        if (child.isMesh) {
+                            child.material = material;
+                        }
+                    });
+                }
+                
+                scene.add(model);
+                
+                // Passe Kamera und Steuerung an
+                setupCamera(model);
+
+                // Starte das Rendering nach dem Laden
+                animate();
+                
+            }, undefined, (error) => {
+                console.error('Fehler beim Laden des 3D-Modells:', error);
+                window.renderingFinished = true;
+            });
+        }
+
+        function setupCamera(model) {
+            // Berechne die Bounding Box des Modells, um die Größe zu bestimmen
+            const box = new THREE.Box3().setFromObject(model);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            
+            // Zentriere das Modell in der Szene
+            model.position.sub(center);
+            
+            // Bestimme die größte Dimension, um die Kamera richtig zu positionieren
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const fov = camera.fov * (Math.PI / 180);
+            let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+            
+            // Füge etwas Abstand hinzu und positioniere die Kamera für einen guten Winkel
+            cameraZ *= 1.5; 
+            camera.position.set(cameraZ, cameraZ / 2, cameraZ);
+            camera.lookAt(new THREE.Vector3(0, 0, 0));
+        }
+
+        function animate() {
+            // Drehe das Modell leicht für einen besseren Blickwinkel (optional)
+            if (scene.children[scene.children.length - 1].isObject3D) {
+                const model = scene.children[scene.children.length - 1];
+                model.rotation.y += 0.005; // Leichte Drehung
+            }
+            
+            renderer.render(scene, camera);
+            
+            // Wir rendern nur 60 Frames und stoppen dann, um den Screenshot zu ermöglichen
+            // Vercel Serverless Functions haben ein Timeout.
+            if (window.frameCount === undefined) window.frameCount = 0;
+            window.frameCount++;
+            
+            if (window.frameCount < 60) {
+                 requestAnimationFrame(animate);
+            } else {
+                // 60 Frames gerendert, jetzt ist das Modell sichtbar und bereit für den Screenshot
+                window.renderingFinished = true;
+            }
+        }
+    </script>
+</body>
+</html>
